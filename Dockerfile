@@ -11,26 +11,29 @@ RUN composer install --no-interaction --no-scripts --no-dev --prefer-dist --opti
 # --- Stage 2: Final Production Image ---
 FROM php:8.1-fpm-alpine
 
-# Install system dependencies for PHP extensions
-# gd extension needs libpng, libjpeg, freetype
+# Install system dependencies & build tools
 RUN apk add --no-cache \
+    $PHPIZE_DEPS \
     libpng-dev \
     jpeg-dev \
     freetype-dev \
     libzip-dev \
-    oniguruma-dev # for mbstring
+    oniguruma-dev
 
-# Install PHP extensions required by Laravel
-# Added: bcmath, fileinfo, gd, mbstring, tokenizer, xml, zip
-RUN docker-php-ext-install \
-    pdo pdo_mysql \
-    bcmath \
-    fileinfo \
-    gd \
-    mbstring \
-    tokenizer \
-    xml \
-    zip
+# Install PHP extensions one by one or in small groups to manage memory
+RUN docker-php-ext-install pdo pdo_mysql
+RUN docker-php-ext-install bcmath
+RUN docker-php-ext-install fileinfo
+RUN docker-php-ext-install mbstring
+RUN docker-php-ext-install tokenizer
+RUN docker-php-ext-install xml
+RUN docker-php-ext-install zip
+# GD is often memory intensive, so it gets its own layer
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j$(nproc) gd
+
+# Clean up build dependencies to keep image size small
+RUN apk del $PHPIZE_DEPS
 
 # Set working directory
 WORKDIR /app
