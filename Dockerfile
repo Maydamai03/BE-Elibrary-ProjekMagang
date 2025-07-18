@@ -2,59 +2,43 @@
 FROM composer:2 as vendor
 
 WORKDIR /app
-COPY database/ database/
 COPY composer.json composer.lock ./
-# Install dependencies but skip running scripts (like artisan) because the full app is not here yet.
 RUN composer install --no-interaction --no-scripts --no-dev --prefer-dist --optimize-autoloader
 
 
-# --- Stage 2: Final Production Image ---
-FROM php:8.1-fpm-alpine
+# --- Stage 2: Production Image with Apache ---
+FROM php:8.1-apache
 
-# Install system dependencies & build tools
-RUN apk add --no-cache \
-    $PHPIZE_DEPS \
-    libpng-dev \
-    jpeg-dev \
-    freetype-dev \
-    libzip-dev \
-    oniguruma-dev
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libzip-dev unzip libpng-dev libjpeg-dev libonig-dev libxml2-dev && \
+    docker-php-ext-install pdo pdo_mysql zip mbstring bcmath fileinfo tokenizer xml gd
 
-# Install PHP extensions one by one or in small groups to manage memory
-RUN docker-php-ext-install pdo pdo_mysql
-RUN docker-php-ext-install bcmath
-RUN docker-php-ext-install fileinfo
-RUN docker-php-ext-install mbstring
-RUN docker-php-ext-install tokenizer
-RUN docker-php-ext-install xml
-RUN docker-php-ext-install zip
-# GD is often memory intensive, so it gets its own layer
-RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j$(nproc) gd
-
-# Clean up build dependencies to keep image size small
-RUN apk del $PHPIZE_DEPS
+# Enable mod_rewrite (penting untuk Laravel)
+RUN a2enmod rewrite
 
 # Set working directory
-WORKDIR /app
+WORKDIR /var/www/html
 
-# Copy files from 'vendor' stage and application files
+# Copy vendor from previous stage
 COPY --from=vendor /app/vendor/ ./vendor/
+
+# Copy entire Laravel app
 COPY . .
 
-# Optimize application for production
-RUN php artisan config:cache
-RUN php artisan route:cache
+# Run artisan optimizations
+RUN php artisan config:cache && \
+    php artisan route:cache && \
+    php artisan storage:link
 
-# Run storage:link
-RUN php artisan storage:link
+# Set permission
+RUN chown -R www-data:www-data storage bootstrap/cache && \
+    chmod -R 775 storage bootstrap/cache
 
-# Set correct file ownership for web server
-RUN chown -R www-data:www-data /app/storage /app/bootstrap/cache
-RUN chmod -R 775 /app/storage /app/bootstrap/cache
+# Expose port for Railway
+EXPOSE 8080
 
-# Expose port 9000 for PHP-FPM
-EXPOSE 9000
+# Override Apache default port to 8080 (Railway needs it)
+RUN sed -i 's/80/8080/g' /etc/apache2/ports.conf /etc/apache2/sites-enabled/000-default.conf
 
-# Command to run PHP-FPM
-CMD ["php-fpm"]
+CMD ["apache2-foreground"]
