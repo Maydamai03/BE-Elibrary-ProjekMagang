@@ -1,10 +1,7 @@
-node_modules
 vendor
+node_modules
 .env
-Dockerfile
-docker-compose.yml
-.git
-.gitignore
-npm-debug.log
-yarn-error.log
-tests
+*.log
+*.git
+storage/app/public/*
+public/storage

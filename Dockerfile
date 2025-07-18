@@ -1,33 +1,35 @@
-# Base image PHP dengan Apache
-FROM php:8.2-apache
-
-# Install system dependencies & PHP extensions
-RUN apt-get update && apt-get install -y \
-    libzip-dev unzip libpng-dev libjpeg-dev libonig-dev libxml2-dev \
-    && docker-php-ext-configure gd --with-jpeg \
-    && docker-php-ext-install pdo pdo_mysql zip mbstring bcmath fileinfo tokenizer xml gd
-
-# Enable Apache Rewrite Module
-RUN a2enmod rewrite
+# Gunakan image PHP-FPM resmi
+FROM php:8.1-fpm
 
 # Set working directory
-WORKDIR /var/www/html
+WORKDIR /var/www
 
-# Copy project files
-COPY . .
-
-# Set permission
-RUN chown -R www-data:www-data /var/www/html \
-    && chmod -R 755 /var/www/html
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpng-dev \
+    libjpeg-dev \
+    libonig-dev \
+    libxml2-dev \
+    libzip-dev \
+    zip \
+    unzip \
+    curl \
+    git \
+    && docker-php-ext-configure gd --with-jpeg \
+    && docker-php-ext-install pdo pdo_mysql mbstring zip exif pcntl bcmath gd
 
 # Install Composer
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Run composer install
-RUN composer install --no-dev --optimize-autoloader
+# Copy existing application
+COPY . /var/www
 
-# Copy default Apache vhost
-COPY ./docker/apache.conf /etc/apache2/sites-available/000-default.conf
+# Set folder permission
+RUN chown -R www-data:www-data /var/www \
+    && chmod -R 755 /var/www/storage /var/www/bootstrap/cache
 
-# Expose port (default Apache port)
-EXPOSE 80
+# Expose port
+EXPOSE 9000
+
+CMD ["php-fpm"]
