@@ -1,44 +1,33 @@
-# --- Stage 1: Build Dependencies ---
-FROM composer:2 as vendor
+# Base image PHP dengan Apache
+FROM php:8.2-apache
 
-WORKDIR /app
-COPY composer.json composer.lock ./
-RUN composer install --no-interaction --no-scripts --no-dev --prefer-dist --optimize-autoloader
-
-
-# --- Stage 2: Production Image with Apache ---
-FROM php:8.1-apache
-
-# Install system dependencies
+# Install system dependencies & PHP extensions
 RUN apt-get update && apt-get install -y \
-    libzip-dev unzip libpng-dev libjpeg-dev libonig-dev libxml2-dev && \
-    docker-php-ext-install pdo pdo_mysql zip mbstring bcmath fileinfo tokenizer xml gd
+    libzip-dev unzip libpng-dev libjpeg-dev libonig-dev libxml2-dev \
+    && docker-php-ext-configure gd --with-jpeg \
+    && docker-php-ext-install pdo pdo_mysql zip mbstring bcmath fileinfo tokenizer xml gd
 
-# Enable mod_rewrite (penting untuk Laravel)
+# Enable Apache Rewrite Module
 RUN a2enmod rewrite
 
 # Set working directory
 WORKDIR /var/www/html
 
-# Copy vendor from previous stage
-COPY --from=vendor /app/vendor/ ./vendor/
-
-# Copy entire Laravel app
+# Copy project files
 COPY . .
 
-# Run artisan optimizations
-RUN php artisan config:cache && \
-    php artisan route:cache && \
-    php artisan storage:link
-
 # Set permission
-RUN chown -R www-data:www-data storage bootstrap/cache && \
-    chmod -R 775 storage bootstrap/cache
+RUN chown -R www-data:www-data /var/www/html \
+    && chmod -R 755 /var/www/html
 
-# Expose port for Railway
-EXPOSE 8080
+# Install Composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# Override Apache default port to 8080 (Railway needs it)
-RUN sed -i 's/80/8080/g' /etc/apache2/ports.conf /etc/apache2/sites-enabled/000-default.conf
+# Run composer install
+RUN composer install --no-dev --optimize-autoloader
 
-CMD ["apache2-foreground"]
+# Copy default Apache vhost
+COPY ./docker/apache.conf /etc/apache2/sites-available/000-default.conf
+
+# Expose port (default Apache port)
+EXPOSE 80
